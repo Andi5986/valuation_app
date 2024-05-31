@@ -13,7 +13,6 @@ def calculate_price(ebit, revenue, scale_factor):
     ebit_weight, revenue_weight = determine_weights(ebit_percentage)
     base_price = (ebit_weight * ebit + revenue_weight * revenue) * scale_factor
 
-    # Apply price constraints
     price = apply_price_constraints(base_price, ebit, revenue)
 
     return round(price, 2), ebit_percentage, ebit_weight, revenue_weight, scale_factor
@@ -52,13 +51,14 @@ def determine_weights(ebit_percentage):
         return 0.7, 0.3
     elif ebit_percentage < 10:
         return 0.5, 0.5
-    elif ebit_percentage > 50:
-        return 0.05, 0.95
-    elif ebit_percentage > 40:
-        return 0.1, 0.9
-    elif ebit_percentage > 30:
+    elif ebit_percentage < 30:
+        return 0.3, 0.7
+    elif ebit_percentage < 40:
         return 0.2, 0.8
-    return 0.3, 0.7
+    elif ebit_percentage < 50:
+        return 0.1, 0.9
+    else:
+        return 0.05, 0.95
 
 def plot_data(ebit, revenue, examples, scale_factor):
     fig, ax = plt.subplots()
@@ -78,7 +78,7 @@ def setup_plot(ax, examples, ebit, revenue):
     ax.set_ylim(0, max_ebit)
     ax.set_xlabel('Revenue')
     ax.set_ylabel('EBIT')
-    ax.set_title('EBIT vs Revenue with Price Annotations')
+    ax.set_title('EBIT vs Revenue with Earnout Annotations')
 
 def plot_minimum_zone(ax):
     # Define the polygon points for the minimum zone, equivalent to the original rectangle
@@ -141,8 +141,10 @@ def plot_Earnout_lines(ax, examples):
     return None
 
 def add_legend(ax, min_zone, ceiling_zone, ebit_ceiling_zone, selected_point, Earnout_line, Earnout_area):
-    elements = [min_zone, ceiling_zone, ebit_ceiling_zone, selected_point, Earnout_area]  # Add Earnout_area to the elements
-    labels = [e.get_label() for e in elements if e.get_label()]
+    filtered_elements = [e for e in [min_zone, ceiling_zone, ebit_ceiling_zone, selected_point, Earnout_area] if not e.get_label().startswith('_')]
+    filtered_labels = [e.get_label() for e in filtered_elements]
+    elements = filtered_elements
+    labels = filtered_labels
     if Earnout_line:
         elements.append(Earnout_line)
         labels.append(Earnout_line.get_label())
@@ -170,37 +172,38 @@ def model_description():
     return """
         ## Model Explanation
 
-        This valuation model determines the earnout mecahnism by taking into account both 
-        EBIT (Earnings Before Interest and Taxes) and Revenue. The model uses dynamic weightings 
-        that adjust based on the ratio of EBIT to Revenue, ensuring that the calculated price 
-        accurately reflects the company's operational efficiency and overall size.
-
-        The model includes scaling factors to fine-tune these weightings within specified EBIT ranges, 
-        which enhances the model's sensitivity to variations in operational performance. Specifically, 
-        the weightings between EBIT and Revenue are adjusted dynamically:
+        The company price is USD'000 900 and the eranout potential is for a valuation of USD'000 2025.
+        This valuation model calculates the earnout mechanism by evaluating both 
+        EBIT (Earnings Before Interest and Taxes) and Revenue. The model dynamically adjusts the weightings 
+        based on the EBIT to Revenue ratio, ensuring the calculated price accurately reflects the company's 
+        operational efficiency and scale.
         
-        - If EBIT is less than 3% of Revenue, a higher weight is assigned to EBIT (90%) and a lower weight to Revenue (10%).
-        - If EBIT is between 3% and 5% of Revenue, the weights are adjusted to 70% for EBIT and 30% for Revenue.
-        - If EBIT is between 5% and 10% of Revenue, equal weights are assigned to both EBIT and Revenue (50% each).
-        - For higher EBIT percentages, the weight on Revenue increases significantly to reflect its greater importance in those cases.
+        The companyt price of USD'000 900 can decrease if variations to minimum Revenue and EBIT exceed 15% from EBIT USD'000 230
+        and Revenue USD'000 2300 respectively. The price will not fall below USD'000 300.
 
-        This fine-tuning ensures that the model can flexibly and accurately account for different operational contexts and performance levels.
+        The model adapts the weightings between EBIT and Revenue within specified EBIT percentage ranges to enhance sensitivity to operational performance fluctuations:
+        
+        The weightings are adjusted to respond to variations in EBIT as follows:
+
+        - **EBIT less than 3% of Revenue:** EBIT receives a significant focus with a 90% weight, contrasting with Revenue at 10%.
+        - **EBIT between 3% and 5% of Revenue:** Weights are adjusted to 70% for EBIT and 30% for Revenue.
+        - **EBIT between 5% and 10% of Revenue:** EBIT and Revenue are equally weighted at 50% each.
+        - **EBIT between 10% and 30% of Revenue (Normal Range):** EBIT is weighted at 30%, and Revenue at 70%.
+        - **EBIT between 30% and 40% of Revenue:** The model shifts emphasis to Revenue with a weighting of 20% for EBIT and 80% for Revenue.
+        - **EBIT between 40% and 50% of Revenue:** The weight on EBIT further decreases to 10%, with Revenue at 90%.
+        - **EBIT above 50% of Revenue:** EBIT has a minimal weighting of 5%, and Revenue dominates at 95%.
+
+        This mechanism ensures that the model can flexibly and accurately account for varying operational contexts and performance levels.
 
         ## Price Constraints
 
-        The model enforces a maximum price of USD'000 2025 to prevent overvaluation. For the minimum price, the model 
-        ensures that it does not drop below USD'000 900 unless there is a significant variation (greater than 15%) 
-        from the minimum EBIT of USD'000 230 and minimum Revenue of USD'000 2300. If such significant variations are detected, 
-        the price may be reduced but will not fall below USD'000 300.
+        The model sets a maximum price cap of USD'000 2025 to prevent overvaluation. For the minimum price, it is configured to not fall below USD'000 900 unless significant variances (greater than 15%) from the minimum EBIT of USD'000 230 and minimum Revenue of USD'000 2300 are observed. In cases of such significant deviations, the price may be further reduced but will not drop below USD'000 300.
 
         ## Scaling Factor Calculation
 
-        The scaling factor is a crucial element of this valuation model. It is derived by comparing known Earnout prices 
-        with prices generated by an initial pricing model using a set of example data points. Each data point consists 
-        of EBIT, Revenue, and an associated Earnout price. The scaling factor is applied uniformly across all pricing 
-        calculations to ensure that the model's output aligns closely with market realities, thereby enhancing the 
-        model's reliability and credibility.
+        The scaling factor is a critical component of this valuation model. It is determined by comparing known earnout prices with prices generated by an initial model using a set of example data points. Each data point includes EBIT, Revenue, and an associated earnout price. The scaling factor is applied uniformly across all pricing calculations to ensure that the model's outputs closely align with market realities, thus enhancing the model's reliability and credibility.
     """
+
 
 if __name__ == '__main__':
     main()
