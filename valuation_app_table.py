@@ -16,14 +16,14 @@ class EarnoutModel:
         ebit_weight, revenue_weight = self.determine_weights(ebit_percentage)
         base_price = (ebit_weight * ebit + revenue_weight * revenue) * self.scale_factor
         price = self.apply_price_constraints(base_price, ebit, revenue)
-        price = self.enforce_minimum_price(price, ebit, revenue)
+        price = self.enforce_price_constraints(price, ebit, revenue)
         return round(price)
 
     def apply_price_constraints(self, price, ebit, revenue):
         min_price = max(300, price)  # Ensure that price does not fall below 300
         return max(min(price, 2025), min_price)
 
-    def enforce_minimum_price(self, price, ebit, revenue):
+    def enforce_price_constraints(self, price, ebit, revenue):
         min_ebit, min_revenue = 230, 2300
         ebit_variation = self.calculate_variation(ebit, min_ebit)
         revenue_variation = self.calculate_variation(revenue, min_revenue)
@@ -31,10 +31,12 @@ class EarnoutModel:
         # Ensure price does not go below 900 unless there's a significant variation
         if price < 900:
             if ebit_variation <= 0.15 and revenue_variation <= 0.15:
-                return 900
+                price = 900
             else:
-                return max(300, price)
-
+                price = max(300, price)
+        # Ensure price does not exceed 2025
+        price = min(price, 2025)
+        
         return price
 
     @staticmethod
