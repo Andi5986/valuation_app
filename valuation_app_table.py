@@ -16,11 +16,26 @@ class EarnoutModel:
         ebit_weight, revenue_weight = self.determine_weights(ebit_percentage)
         base_price = (ebit_weight * ebit + revenue_weight * revenue) * self.scale_factor
         price = self.apply_price_constraints(base_price, ebit, revenue)
+        price = self.enforce_minimum_price(price, ebit, revenue)
         return round(price)
 
     def apply_price_constraints(self, price, ebit, revenue):
         min_price = max(300, price)  # Ensure that price does not fall below 300
         return max(min(price, 2025), min_price)
+
+    def enforce_minimum_price(self, price, ebit, revenue):
+        min_ebit, min_revenue = 230, 2300
+        ebit_variation = self.calculate_variation(ebit, min_ebit)
+        revenue_variation = self.calculate_variation(revenue, min_revenue)
+
+        # Ensure price does not go below 900 unless there's a significant variation
+        if price < 900:
+            if ebit_variation <= 0.15 and revenue_variation <= 0.15:
+                return 900
+            else:
+                return max(300, price)
+
+        return price
 
     @staticmethod
     def calculate_variation(current, minimum):
@@ -84,13 +99,13 @@ def model_description():
     return """
         ## Model Explanation
 
-        The company price is USD'000 900 and the eranout potential is for a valuation of USD'000 2025.
+        The company price is USD'000 900 and the earnout potential is for a valuation of USD'000 2025.
         This valuation model calculates the earnout mechanism by evaluating both 
         EBIT (Earnings Before Interest and Taxes) and Revenue. The model dynamically adjusts the weightings 
         based on the EBIT to Revenue ratio, ensuring the calculated price accurately reflects the company's 
         operational efficiency and scale.
         
-        The companyt price of USD'000 900 can decrease if variations to minimum Revenue and EBIT exceed 15% from EBIT USD'000 230
+        The company price of USD'000 900 can decrease if variations to minimum Revenue and EBIT exceed 15% from EBIT USD'000 230
         and Revenue USD'000 2300 respectively. The price will not fall below USD'000 300.
 
         The model adapts the weightings between EBIT and Revenue within specified EBIT percentage ranges to enhance sensitivity to operational performance fluctuations:
