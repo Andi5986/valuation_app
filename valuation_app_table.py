@@ -13,7 +13,7 @@ class EarnoutModel:
 
     def calculate_price(self, ebit, revenue):
         ebit_percentage = (ebit / revenue) * 100
-        ebit_weight, revenue_weight = self.determine_weights(ebit_percentage)
+        ebit_weight, revenue_weight = self.determine_weights(ebit_percentage, revenue)
         base_price = (ebit_weight * ebit + revenue_weight * revenue) * self.scale_factor
         price = self.apply_price_constraints(base_price, ebit, revenue)
         price = self.enforce_price_constraints(price, ebit, revenue)
@@ -44,7 +44,16 @@ class EarnoutModel:
         return abs(current - minimum) / minimum
 
     @staticmethod
-    def determine_weights(ebit_percentage):
+    def determine_weights(ebit_percentage, revenue):
+        if revenue > 3600:
+            if ebit_percentage < 3:
+                return (0.9, 0.1)
+            elif ebit_percentage < 5:
+                return (0.7, 0.3)
+            elif ebit_percentage < 15:
+                return (0.5, 0.5)
+            else:
+                return (0.3, 0.7)
         if ebit_percentage < 3:
             return 0.9, 0.1
         elif ebit_percentage < 5:
@@ -62,7 +71,7 @@ class EarnoutModel:
 
 def main():
     st.title('Earnout Model')
-    examples = [(230, 2300, 900), (350, 3500, 1350), (525, 5250, 2025)]
+    examples = [(230, 2300, 900), (350, 3500, 1350), (780, 5250, 2025)]
     model = EarnoutModel(examples)
     ebit1 = st.sidebar.number_input("Enter Year 1 EBIT in USD'000:", value=230)
     revenue1 = st.sidebar.number_input("Enter Year 1 Revenue in USD'000:", value=2300)
@@ -113,12 +122,14 @@ def model_description():
         The model adapts the weightings between EBIT and Revenue within specified EBIT percentage ranges to enhance sensitivity to operational performance fluctuations:
         
         The weightings are adjusted to respond to variations in EBIT as follows:
+        
+        IMPORTANT: when revenue is below 3600 EBIT is 10% and when exceeds 1600 should be above 15%
 
         - **EBIT less than 3% of Revenue:** EBIT receives a significant focus with a 90% weight, contrasting with Revenue at 10%.
         - **EBIT between 3% and 5% of Revenue:** Weights are adjusted to 70% for EBIT and 30% for Revenue.
         - **EBIT between 5% and 10% of Revenue:** EBIT and Revenue are equally weighted at 50% each.
         - **EBIT between 10% and 30% of Revenue (Normal Range):** EBIT is weighted at 30%, and Revenue at 70%.
-        - **EBIT between 30% and 40% of Revenue:** The model shifts emphasis to Revenue with a weighting of 20% for EBIT and 80% for Revenue.
+        - **EBIT between 30% and 40% of Revenue:** The model shifts emphasis to Revenue with a weighting of 80% for EBIT and 20% for Revenue.
         - **EBIT between 40% and 50% of Revenue:** The weight on EBIT further decreases to 10%, with Revenue at 90%.
         - **EBIT above 50% of Revenue:** EBIT has a minimal weighting of 5%, and Revenue dominates at 95%.
 
