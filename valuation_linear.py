@@ -2,22 +2,47 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 
+class Config:
+    def __init__(self):
+        self.ebit_values = np.array([220, 350, 550])
+        self.revenue_values = np.array([2200, 3500, 5500])
+        self.valuation_values = np.array([800, 1350, 2020])
+        self.seller_income = 220
+        self.base_price = 800
+        self.valuation_ceiling = 2020
+        self.ebit_ceiling = 750
+        self.revenue_ceiling = 5500
+        self.specific_combinations = {(0,0): 750, (220, 2200): 800, (350, 3500): 1350, (550, 5500): 2020}
+        self.ebit_ratio_threshold = 0.09
+        self.valuation_multiplier = 3.7
+
+    def generate_linear_relations_table(self):
+        rows = [0] + list(self.ebit_values)
+        columns = [0] + list(self.revenue_values)
+        table = []
+
+        for row in rows:
+            row_data = []
+            for col in columns:
+                value = self.specific_combinations.get((row, col), 0)  
+                row_data.append(value)
+            table.append(row_data)
+
+        linear_relations_data = {'EBIT / Revenue': columns}
+        for i, row in enumerate(table):
+            linear_relations_data[str(rows[i])] = row
+
+        return pd.DataFrame(linear_relations_data)
+
 class ValuationModel:
     """
     This class handles the valuation calculations based on EBIT and Revenue.
     It uses a linear regression model to calculate the valuation based on given data points.
     """
-    def __init__(self, ebit_values, revenue_values, valuation_values, seller_income=220, base_price=800, valuation_ceiling=2020, ebit_ceiling=750, revenue_ceiling=5500):
-        self.ebit_values = ebit_values
-        self.revenue_values = revenue_values
-        self.valuation_values = valuation_values
-        self.seller_income = seller_income
-        self.base_price = base_price
-        self.valuation_ceiling = valuation_ceiling
-        self.ebit_ceiling = ebit_ceiling
-        self.revenue_ceiling = revenue_ceiling
-        self.m_ebit, self.c_ebit = self.calculate_slope_intercept(ebit_values, valuation_values)
-        self.m_revenue, self.c_revenue = self.calculate_slope_intercept(revenue_values, valuation_values)
+    def __init__(self, config: Config):
+        self.config = config
+        self.m_ebit, self.c_ebit = self.calculate_slope_intercept(config.ebit_values, config.valuation_values)
+        self.m_revenue, self.c_revenue = self.calculate_slope_intercept(config.revenue_values, config.valuation_values)
 
     def calculate_slope_intercept(self, x, y):
         n = len(x)
@@ -26,25 +51,34 @@ class ValuationModel:
         return m, c
 
     def calculate_valuation(self, ebit, revenue):
-        ebit = min(ebit, self.ebit_ceiling)  # Apply EBIT ceiling
-        revenue = min(revenue, self.revenue_ceiling)  # Apply Revenue ceiling
+        # Specific checks for given EBIT and Revenue values
+        if (ebit, revenue) in self.config.specific_combinations:
+            return self.config.specific_combinations[(ebit, revenue)]
+        
+        ebit = min(ebit, self.config.ebit_ceiling)  # Apply EBIT ceiling
+        revenue = min(revenue, self.config.revenue_ceiling)  # Apply Revenue ceiling
         valuation_ebit = self.m_ebit * ebit + self.c_ebit
         valuation_revenue = self.m_revenue * revenue + self.c_revenue
         valuation = (valuation_ebit + valuation_revenue) / 2
-        return int(min(valuation, self.valuation_ceiling))  # Apply value ceiling and convert to integer
+
+        ebit_ratio = ebit / revenue if revenue != 0 else 0
+        if ebit_ratio < self.config.ebit_ratio_threshold:
+            valuation = min(valuation, self.config.valuation_multiplier * ebit)
+        
+        return max(750, int(min(valuation, self.config.valuation_ceiling)))  # Apply floor price and ceiling
 
 class PaymentBreakdown:
     """
     This class handles the payment breakdown calculations.
     It splits the base price and the earnout payments over different time periods.
     """
-    def __init__(self, base_price):
-        self.base_price = base_price
+    def __init__(self, config: Config):
+        self.config = config
 
     def calculate(self, valuation):
-        base_payment_t0 = int(self.base_price / 2)
-        base_payment_t1 = int(self.base_price / 2)
-        difference = int(valuation - self.base_price)
+        base_payment_t0 = int(self.config.base_price / 2)
+        base_payment_t1 = int(self.config.base_price / 2)
+        difference = int(valuation - self.config.base_price)
         diff_payment_t1 = int(difference / 2)
         diff_payment_t2 = int(difference / 2)
         return base_payment_t0, base_payment_t1, diff_payment_t1, diff_payment_t2, difference
@@ -55,7 +89,7 @@ class PaymentBreakdown:
             'T0': [base_payment_t0, 0, base_payment_t0],
             'T1': [base_payment_t1, diff_payment_t1, base_payment_t1 + diff_payment_t1],
             'T2': [0, diff_payment_t2, diff_payment_t2],
-            'Total': [self.base_price, valuation - self.base_price, valuation]
+            'Total': [self.config.base_price, valuation - self.config.base_price, valuation]
         }
         return pd.DataFrame(data)
 
@@ -93,19 +127,15 @@ class BuyBackTable:
         return pd.DataFrame(data)
 
 def main():
-    # Input values and constants
-    ebit_values = np.array([220, 350, 550])
-    revenue_values = np.array([2200, 3500, 5500])
-    valuation_values = np.array([800, 1350, 2020])
-    seller_income = 220
-    base_price = 800
-    valuation_ceiling = 2020
-    ebit_ceiling = 750
-    revenue_ceiling = 5500
+    # Instantiate the config
+    config = Config()
+
+    # Generate the linear relations table from specific combinations
+    linear_relations_df = config.generate_linear_relations_table()
 
     # Instantiate the models
-    valuation_model = ValuationModel(ebit_values, revenue_values, valuation_values, seller_income, base_price, valuation_ceiling, ebit_ceiling, revenue_ceiling)
-    payment_breakdown = PaymentBreakdown(base_price)
+    valuation_model = ValuationModel(config)
+    payment_breakdown = PaymentBreakdown(config)
 
     # Streamlit App
     st.title("Earnout Model")
@@ -116,13 +146,18 @@ def main():
     revenue = st.sidebar.number_input("Enter Revenue", min_value=0)
 
     # Description of the model
-    st.sidebar.markdown(f"""
+    st.sidebar.markdown("""
     ## Model Description
-    This model calculates the valuation based on EBIT and Revenue using linear regression from the following data points
-    Revenue: {revenue_values}, EBIT: {ebit_values} and interspecting this valuation: {valuation_values}.
+    This model calculates the valuation based on EBIT and Revenue using linear regression. 
+    The values for the linear slope are taken from the Linear Relations Table.
+    In case the EBIT is lower than 9% valuation is calculated using EBIT 3.7 multiplier.
     
     The valuation is then used to determine the payment breakdown and buy-back calculations.
     """)
+
+    # Display the linear relations table
+    st.write("### Linear Relations Table")
+    st.table(linear_relations_df)
 
     # Calculate button
     if st.sidebar.button("Calculate"):
@@ -133,28 +168,28 @@ def main():
         ebit_multiple = round(valuation / ebit, 2) if ebit != 0 else 0
 
         # Calculate SDI
-        sdi = round(valuation / (ebit + seller_income), 2) if (ebit + seller_income) != 0 else 0
+        sdi = round(valuation / (ebit + config.seller_income), 2) if (ebit + config.seller_income) != 0 else 0
 
         # Calculate payment breakdown
         base_payment_t0, base_payment_t1, diff_payment_t1, diff_payment_t2, difference = payment_breakdown.calculate(valuation)
 
         # Create dataframes for displaying results
         payment_df = payment_breakdown.create_dataframe(base_payment_t0, base_payment_t1, diff_payment_t1, diff_payment_t2, valuation)
-        buy_back_table = BuyBackTable(ebit, seller_income)
+        buy_back_table = BuyBackTable(ebit, config.seller_income)
         buy_back_df = buy_back_table.create_dataframe(payment_df)
 
         # Display the results
-        st.write(f"EBIT: {ebit}")
-        st.write(f"Revenue: {revenue}")
-        st.write(f"Calculated Valuation: {valuation}")
-        st.write(f"**EBIT Multiple: {ebit_multiple}**")
-        st.write(f"**SDI: {sdi}**")
+        st.write("### Results")
+        st.write(f"**Calculated Valuation: {valuation}**")
+        st.write(f"**EBIT Ratio: {ebit/revenue:.2%}**" if revenue != 0 else "**EBIT Ratio: 0.00%**")
+        st.write(f"**EBIT Multiple: {ebit_multiple}x**")
+        st.write(f"**SDI Multiple: {sdi}x**")
 
         st.write("### Payment Breakdown")
-        st.table(payment_df.applymap(lambda x: int(x) if isinstance(x, (int, float)) else x))
+        st.table(payment_df.map(lambda x: int(x) if isinstance(x, (int, float)) else x))
 
         st.write("### Buy-Back Table")
-        st.table(buy_back_df.applymap(lambda x: int(x) if isinstance(x, (int, float)) else x))
+        st.table(buy_back_df.map(lambda x: int(x) if isinstance(x, (int, float)) else x))
 
         # Display the calculated slope and intercept for both EBIT and Revenue
         st.write("### Linear Relationship for Valuation")
