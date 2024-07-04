@@ -1,18 +1,18 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 class Config:
     def __init__(self):
         self.ebit_values = np.array([220, 350, 550])
         self.revenue_values = np.array([2200, 3500, 5500])
         self.valuation_values = np.array([800, 1350, 2020])
-        self.seller_income = 220
         self.base_price = 800
         self.valuation_ceiling = 2020
         self.ebit_ceiling = 750
         self.revenue_ceiling = 5500
-        self.specific_combinations = {(0,0): 750, (220, 2200): 800, (350, 3500): 1350, (550, 5500): 2020}
+        self.specific_combinations = {(550, 5500): 2020, (350, 3500): 1350, (220, 2200): 800, (0, 0): 750}
         self.ebit_ratio_threshold = 0.09
         self.valuation_multiplier = 3.7
 
@@ -24,7 +24,7 @@ class Config:
         for row in rows:
             row_data = []
             for col in columns:
-                value = self.specific_combinations.get((row, col), 0)  
+                value = self.specific_combinations.get((row, col), 0)
                 row_data.append(value)
             table.append(row_data)
 
@@ -67,6 +67,27 @@ class ValuationModel:
         
         return max(750, int(min(valuation, self.config.valuation_ceiling)))  # Apply floor price and ceiling
 
+    def plot_linear_relationships(self, ebit, revenue, valuation):
+        value_slope = np.linspace(0, self.config.ebit_ceiling, 100) 
+
+        revenue_for_ebit_valuation = (self.m_ebit * value_slope + self.c_ebit - self.c_revenue) / self.m_revenue
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(revenue_for_ebit_valuation, value_slope, label='Valuation Slope', color='blue')
+
+        plt.scatter(revenue, ebit, color='red', s=100, label=f'Valuation: Revenue = {revenue}, EBIT = {ebit}')
+
+        plt.xlabel('Revenue')
+        plt.ylabel('EBIT')
+        plt.title('EBIT vs. Revenue: Valuation based on Revenue and EBIT')
+
+        plt.xlim(0, self.config.revenue_ceiling)
+        plt.ylim(0, self.config.ebit_ceiling)
+
+        plt.legend()
+        plt.grid(True)
+        st.pyplot(plt)
+
 class PaymentBreakdown:
     """
     This class handles the payment breakdown calculations.
@@ -79,8 +100,8 @@ class PaymentBreakdown:
         base_payment_t0 = int(self.config.base_price / 2)
         base_payment_t1 = int(self.config.base_price / 2)
         difference = int(valuation - self.config.base_price)
-        diff_payment_t1 = int(difference / 2)
-        diff_payment_t2 = int(difference / 2)
+        diff_payment_t1 = difference // 2
+        diff_payment_t2 = difference // 2
         return base_payment_t0, base_payment_t1, diff_payment_t1, diff_payment_t2, difference
 
     def create_dataframe(self, base_payment_t0, base_payment_t1, diff_payment_t1, diff_payment_t2, valuation):
@@ -90,39 +111,6 @@ class PaymentBreakdown:
             'T1': [base_payment_t1, diff_payment_t1, base_payment_t1 + diff_payment_t1],
             'T2': [0, diff_payment_t2, diff_payment_t2],
             'Total': [self.config.base_price, valuation - self.config.base_price, valuation]
-        }
-        return pd.DataFrame(data)
-
-class BuyBackTable:
-    """
-    This class handles the creation of the buy-back table.
-    It calculates the earnings, payments, and differences over different time periods.
-    """
-    def __init__(self, ebit, seller_income):
-        self.ebit = ebit
-        self.seller_income = seller_income
-
-    def create_dataframe(self, payment_df):
-        earnings_t0 = 0
-        earnings_t1 = self.ebit
-        earnings_t2 = self.ebit + self.seller_income
-        earnings_t3 = earnings_t2
-
-        payments = payment_df.iloc[2, 1:4].values  # Take the 'Total' row from payment_df, exclude T3
-
-        earnings = [earnings_t0, earnings_t1, earnings_t2, earnings_t3]
-        difference = [earnings[i] - payments[i] if i < len(payments) else earnings[i] for i in range(4)]
-        
-        cumulative_earnings = np.cumsum(earnings)
-        cumulative_payments = np.cumsum(np.append(payments, 0))  # Add 0 for T3 payment
-        cumulative_difference = np.cumsum(difference)
-
-        data = {
-            'Item': ['Earnings', 'Payments', 'Difference', 'Cumulative Earnings', 'Cumulative Payments', 'Cumulative Difference'],
-            'T0': [earnings_t0, payments[0], difference[0], cumulative_earnings[0], cumulative_payments[0], cumulative_difference[0]],
-            'T1': [earnings_t1, payments[1], difference[1], cumulative_earnings[1], cumulative_payments[1], cumulative_difference[1]],
-            'T2': [earnings_t2, payments[2], difference[2], cumulative_earnings[2], cumulative_payments[2], cumulative_difference[2]],
-            'T3': [earnings_t3, 0, difference[3], cumulative_earnings[3], cumulative_payments[3], cumulative_difference[3]]
         }
         return pd.DataFrame(data)
 
@@ -167,29 +155,20 @@ def main():
         # Calculate EBIT multiple
         ebit_multiple = round(valuation / ebit, 2) if ebit != 0 else 0
 
-        # Calculate SDI
-        sdi = round(valuation / (ebit + config.seller_income), 2) if (ebit + config.seller_income) != 0 else 0
-
         # Calculate payment breakdown
         base_payment_t0, base_payment_t1, diff_payment_t1, diff_payment_t2, difference = payment_breakdown.calculate(valuation)
 
         # Create dataframes for displaying results
         payment_df = payment_breakdown.create_dataframe(base_payment_t0, base_payment_t1, diff_payment_t1, diff_payment_t2, valuation)
-        buy_back_table = BuyBackTable(ebit, config.seller_income)
-        buy_back_df = buy_back_table.create_dataframe(payment_df)
 
         # Display the results
         st.write("### Results")
         st.write(f"**Calculated Valuation: {valuation}**")
         st.write(f"**EBIT Ratio: {ebit/revenue:.2%}**" if revenue != 0 else "**EBIT Ratio: 0.00%**")
         st.write(f"**EBIT Multiple: {ebit_multiple}x**")
-        st.write(f"**SDI Multiple: {sdi}x**")
 
         st.write("### Payment Breakdown")
         st.table(payment_df.map(lambda x: int(x) if isinstance(x, (int, float)) else x))
-
-        st.write("### Buy-Back Table")
-        st.table(buy_back_df.map(lambda x: int(x) if isinstance(x, (int, float)) else x))
 
         # Display the calculated slope and intercept for both EBIT and Revenue
         st.write("### Linear Relationship for Valuation")
@@ -197,6 +176,10 @@ def main():
         st.write(f"Intercept (EBIT): {round(valuation_model.c_ebit, 2)}")
         st.write(f"Slope (Revenue): {round(valuation_model.m_revenue, 2)}")
         st.write(f"Intercept (Revenue): {round(valuation_model.c_revenue, 2)}")
+
+        # Plot the linear relationships
+        st.write("### Linear Relationships Plot")
+        valuation_model.plot_linear_relationships(ebit, revenue, valuation)
 
 if __name__ == "__main__":
     main()
